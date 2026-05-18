@@ -34,7 +34,10 @@ async function api(action, body=null) {
       ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
       : {method:'GET'};
     const url = action ? API_URL+'?action='+action : API_URL;
-    const res = await fetch(url, opts);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(url, {...opts, signal: controller.signal});
+    clearTimeout(timer);
     const text = await res.text();
     try { return JSON.parse(text); } catch { return {error:'Respuesta inválida: '+text.slice(0,100)}; }
   } catch(e) { return {error:e.message}; }
