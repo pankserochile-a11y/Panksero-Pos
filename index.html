@@ -61,7 +61,13 @@ const storage = {
     arr.unshift(mov);
     if(arr.length > 500) arr.splice(500);
     localStorage.setItem('panksero_movimientos', JSON.stringify(arr));
-  }
+  },
+  getProducts: () => { try { return JSON.parse(localStorage.getItem('panksero_products')||'null'); } catch { return null; } },
+  saveProducts: (data) => localStorage.setItem('panksero_products', JSON.stringify(data)),
+  getSales: () => { try { return JSON.parse(localStorage.getItem('panksero_sales')||'[]'); } catch { return []; } },
+  saveSales: (data) => localStorage.setItem('panksero_sales', JSON.stringify(data)),
+  getCredits: () => { try { return JSON.parse(localStorage.getItem('panksero_credits')||'[]'); } catch { return []; } },
+  saveCredits: (data) => localStorage.setItem('panksero_credits', JSON.stringify(data)),
 };
 
 // ── Generador de cierre HTML descargable ──
@@ -150,6 +156,7 @@ function App() {
   const [migrating, setMigrating] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [migrationLog, setMigrationLog] = useState([]);
+  const [offlineMode, setOfflineMode] = useState(false);
   const barcodeRef = useRef(null);
 
   const showToast = (msg, color='#2d6a4f') => { setToast({msg,color}); setTimeout(()=>setToast(null),3500); };
@@ -159,10 +166,35 @@ function App() {
     const [prods, sls, crds] = await Promise.all([
       api('getProducts'), api('getSales'), api('getCredits')
     ]);
-    if(prods.error) { setDbStatus('error'); setLoading(false); return; }
+    if(prods.error) {
+      const cached = storage.getProducts();
+      if(cached && cached.length > 0) {
+        setProducts(cached);
+        setSales(storage.getSales());
+        setCredits(storage.getCredits());
+        setOfflineMode(true);
+        setDbStatus('ok');
+        setLoading(false);
+      } else if(MIGRATION_PRODUCTS && MIGRATION_PRODUCTS.length > 0) {
+        setProducts(MIGRATION_PRODUCTS);
+        setSales(MIGRATION_SALES || []);
+        setCredits([]);
+        setOfflineMode(true);
+        setDbStatus('ok');
+        setLoading(false);
+      } else {
+        setDbStatus('error');
+        setLoading(false);
+      }
+      return;
+    }
     setProducts(Array.isArray(prods)?prods:[]);
     setSales(Array.isArray(sls)?sls:[]);
     setCredits(Array.isArray(crds)?crds:[]);
+    storage.saveProducts(Array.isArray(prods)?prods:[]);
+    storage.saveSales(Array.isArray(sls)?sls:[]);
+    storage.saveCredits(Array.isArray(crds)?crds:[]);
+    setOfflineMode(false);
     setDbStatus('ok');
     setLoading(false);
   }, []);
@@ -403,7 +435,7 @@ function App() {
           <div style={{background:'#c9963a',borderRadius:8,width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Fraunces',serif",fontWeight:900,color:'#3d2010'}}>P</div>
           <div>
             <div style={{fontFamily:"'Fraunces',serif",color:'#f5ede0',fontWeight:700,fontSize:'.95rem',lineHeight:1}}>Panksero POS</div>
-            <div style={{fontSize:'.62rem',color:'#c9963a'}}>☁️ Google Sheets · {products.length} productos{stockCriticos.length>0&&<span style={{color:'#ff9966'}}> · ⚠️ {stockCriticos.filter(p=>p.stock===0).length} sin stock</span>}</div>
+            <div style={{fontSize:'.62rem',color:'#c9963a'}}>{offlineMode?'📴 Sin conexión · ':' ☁️ Google Sheets · '}{products.length} productos{offlineMode&&<span style={{color:'#ff9966'}}> · datos locales</span>}{stockCriticos.length>0&&<span style={{color:'#ff9966'}}> · ⚠️ {stockCriticos.filter(p=>p.stock===0).length} sin stock</span>}</div>
           </div>
         </div>
         <div style={{display:'flex',gap:4,flexWrap:'wrap',justifyContent:'center'}}>
@@ -574,9 +606,9 @@ function App() {
                         <div style={{fontWeight:700,fontSize:'.85rem'}}>{fmt(p.price)}</div>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:3}}>
-                        <button onClick={async()=>{const ns=Math.max(0,p.stock-1);const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:-1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#fde8e8','#c0392b'),width:22,height:22,padding:0}}>−</button>
+                        <button onClick={async()=>{const ns=Math.max(0,p.stock-1);storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:-1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>{const updated=ps.map(x=>x.id===p.id?{...x,stock:ns}:x);storage.saveProducts(updated);return updated;});api(null,{action:'updateStock',id:p.id,stock:ns}).then(r=>{if(r.error&&!offlineMode)showToast('⚠️ Sin conexión: cambio guardado localmente','#c9963a');});}} style={{...S.btn('#fde8e8','#c0392b'),width:22,height:22,padding:0}}>−</button>
                         <span style={{fontFamily:"'Fraunces',serif",fontSize:'1.1rem',fontWeight:700,minWidth:28,textAlign:'center',color:p.stock===0?'#c0392b':p.stock<=3?'#c9963a':'#2d6a4f'}}>{p.stock}</span>
-                        <button onClick={async()=>{const ns=p.stock+1;const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:+1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#d1fae5','#065f46'),width:22,height:22,padding:0}}>+</button>
+                        <button onClick={async()=>{const ns=p.stock+1;storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:+1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>{const updated=ps.map(x=>x.id===p.id?{...x,stock:ns}:x);storage.saveProducts(updated);return updated;});api(null,{action:'updateStock',id:p.id,stock:ns}).then(r=>{if(r.error&&!offlineMode)showToast('⚠️ Sin conexión: cambio guardado localmente','#c9963a');});}} style={{...S.btn('#d1fae5','#065f46'),width:22,height:22,padding:0}}>+</button>
                       </div>
                       <button onClick={()=>setStockModal({product:p,qty:1})} style={{...S.btn('#8B5E3C'),padding:'5px 10px',fontSize:'.75rem'}}>📦 Cargar</button>
                       <button onClick={()=>{const f=products.find(x=>x.id===p.id);if(f)setEditP({...f});}} style={{background:'#e8f4fd',color:'#185FA5',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:'.85rem'}}>✏️</button>
@@ -718,10 +750,11 @@ function App() {
           <div style={{fontFamily:"'Fraunces',serif",fontSize:'1.3rem',color:'#3d2010',fontWeight:700,marginBottom:16}}>⚙️ Configuración</div>
 
           {/* Google Sheets */}
-          <div style={{...S.card,padding:18,marginBottom:14,border:'2px solid #2d6a4f'}}>
-            <div style={{fontWeight:700,color:'#3d2010',marginBottom:6}}>☁️ Google Sheets</div>
+          <div style={{...S.card,padding:18,marginBottom:14,border:`2px solid ${offlineMode?'#c0392b':'#2d6a4f'}`}}>
+            <div style={{fontWeight:700,color:'#3d2010',marginBottom:6}}>{offlineMode?'📴 Sin conexión — Modo offline':'☁️ Google Sheets'}</div>
+            {offlineMode&&<div style={{fontSize:'.78rem',color:'#c0392b',marginBottom:8,background:'#fff5f5',padding:'6px 10px',borderRadius:6}}>No se pudo conectar con Google Sheets. Los datos se muestran desde la caché local y los cambios de stock se guardan localmente.</div>}
             <div style={{fontSize:'.82rem',color:'#8B5E3C',marginBottom:10}}>{products.length} productos · {sales.length} ventas · {credits.length} créditos</div>
-            <button onClick={()=>{setLoading(true);loadData();}} style={{...S.btn('#2d6a4f'),padding:'8px 16px',fontSize:'.85rem'}}>🔄 Sincronizar</button>
+            <button onClick={()=>{setLoading(true);setOfflineMode(false);loadData();}} style={{...S.btn(offlineMode?'#c0392b':'#2d6a4f'),padding:'8px 16px',fontSize:'.85rem'}}>{offlineMode?'🔄 Reintentar conexión':'🔄 Sincronizar'}</button>
           </div>
 
           {/* Historial de Cierres */}
