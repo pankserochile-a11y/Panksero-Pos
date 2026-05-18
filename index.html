@@ -31,7 +31,7 @@ const MIGRATION_CREDITS = [{"id": "1778273096085", "date": "2026-05-08", "client
 async function api(action, body=null) {
   try {
     const opts = body
-      ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}
+      ? {method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(body)}
       : {method:'GET'};
     const url = action ? API_URL+'?action='+action : API_URL;
     const controller = new AbortController();
