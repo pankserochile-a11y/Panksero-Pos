@@ -255,34 +255,37 @@ function App() {
       total: cartTotal, method: payMethod||'Efectivo', client: clientName||''
     };
 
-    const r = await api(null,{action:'saveSale',sale});
-    if(r.error){ showToast('⚠️ Error guardando venta','#c0392b'); setProcessing(false); return; }
-
-    if(payMethod==='Crédito'){
-      const credEntry = {id:sale.id,date:today,time:localTime(),client:clientName,total:cartTotal,paid:false,items:sale.items,nota:''};
-      await api(null,{action:'saveCredit',credit:credEntry});
-      setCredits(c=>[credEntry,...c]);
-    }
-
-    // Descontar stock de cada producto
+    // Actualizar UI inmediatamente sin esperar la API
     const updatedProds = [...products];
+    const stockUpdates = [];
     for(const it of snap){
       const idx = updatedProds.findIndex(p=>p.id===it.id);
       if(idx!==-1){
         const ns = Math.max(0, updatedProds[idx].stock - it.qty);
-        const r2 = await api(null,{action:'updateStock',id:it.id,stock:ns});
-        if(!r2.error){
-          storage.addMovimiento({fecha:today,hora:localTime(),tipo:'venta',producto:updatedProds[idx].name,cantidad:-it.qty,stockAntes:updatedProds[idx].stock,stockDespues:ns,ref:sale.id});
-          updatedProds[idx] = {...updatedProds[idx],stock:ns};
-        }
+        storage.addMovimiento({fecha:today,hora:localTime(),tipo:'venta',producto:updatedProds[idx].name,cantidad:-it.qty,stockAntes:updatedProds[idx].stock,stockDespues:ns,ref:sale.id});
+        stockUpdates.push({id:it.id,stock:ns});
+        updatedProds[idx] = {...updatedProds[idx],stock:ns};
       }
     }
     setProducts(updatedProds);
+    storage.saveProducts(updatedProds);
     setSales(s=>[sale,...s]);
     setCart([]); setCashInput(''); setClientName('');
     setProcessing(false);
     showToast('✅ '+(payMethod==='Crédito'?'Crédito':'Venta')+' '+fmt(cartTotal)+' registrado');
     setTimeout(()=>barcodeRef.current?.focus(),150);
+
+    // Enviar todo a Google Sheets en paralelo en background
+    const apiCalls = [api(null,{action:'saveSale',sale})];
+    if(payMethod==='Crédito'){
+      const credEntry = {id:sale.id,date:today,time:localTime(),client:clientName,total:cartTotal,paid:false,items:sale.items,nota:''};
+      setCredits(c=>[credEntry,...c]);
+      apiCalls.push(api(null,{action:'saveCredit',credit:credEntry}));
+    }
+    stockUpdates.forEach(u=>apiCalls.push(api(null,{action:'updateStock',id:u.id,stock:u.stock})));
+    Promise.all(apiCalls).then(results=>{
+      if(results[0]?.error) showToast('⚠️ Venta guardada localmente (sin conexión)','#c9963a');
+    });
   };
 
   const pagarCredito = async (id) => {
