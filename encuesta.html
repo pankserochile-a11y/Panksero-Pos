@@ -234,25 +234,26 @@ body {
 /* ──────── STARS ──────── */
 .stars-wrap {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
   margin: 24px 0 8px;
-  padding: 20px;
+  padding: 24px 20px;
   background: var(--white);
   border-radius: var(--radius);
   border: 2px solid var(--border);
   box-shadow: var(--shadow-sm);
 }
 .star {
-  font-size: 42px;
+  font-size: 48px;
   cursor: pointer;
-  transition: transform 0.15s, opacity 0.15s, filter 0.15s;
-  opacity: 0.2;
-  filter: grayscale(0.8);
+  transition: transform 0.15s, color 0.15s;
+  color: #ddd;
+  line-height: 1;
   -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
-.star:hover { opacity: 0.7; transform: scale(1.15); filter: grayscale(0); }
-.star.active { opacity: 1; transform: scale(1.05); filter: grayscale(0); }
+.star:hover { color: var(--orange-light); transform: scale(1.2); }
+.star.active { color: var(--orange); transform: scale(1.08); }
 .star-label {
   text-align: center;
   font-size: 14px;
@@ -679,11 +680,11 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     <div class="step-title">¿Cómo calificarías tu experiencia?</div>
     <div class="step-desc">Producto, atención y ambiente en tu última visita.</div>
     <div class="stars-wrap">
-      <span class="star" onclick="setStar(1)">⭐</span>
-      <span class="star" onclick="setStar(2)">⭐</span>
-      <span class="star" onclick="setStar(3)">⭐</span>
-      <span class="star" onclick="setStar(4)">⭐</span>
-      <span class="star" onclick="setStar(5)">⭐</span>
+      <span class="star" onclick="setStar(1)">★</span>
+      <span class="star" onclick="setStar(2)">★</span>
+      <span class="star" onclick="setStar(3)">★</span>
+      <span class="star" onclick="setStar(4)">★</span>
+      <span class="star" onclick="setStar(5)">★</span>
     </div>
     <div class="star-label" id="starLabel">Toca una estrella para calificar</div>
     <div class="nav-row">
