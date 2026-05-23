@@ -403,15 +403,16 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
   background: linear-gradient(to bottom, rgba(255,255,255,0.12), transparent);
   border-radius: inherit;
 }
-.btn-next:hover:not(:disabled) {
+.btn-next:hover:not(.inactivo) {
   background: var(--orange-dark);
   transform: translateY(-1px);
   box-shadow: 0 8px 28px rgba(247,148,29,0.38);
 }
-.btn-next:active:not(:disabled) { transform: translateY(0); }
-.btn-next:disabled {
+.btn-next:active:not(.inactivo) { transform: translateY(0); }
+.btn-next.inactivo {
   opacity: 0.35;
   cursor: default;
+  pointer-events: none;
   box-shadow: none;
   transform: none;
 }
@@ -670,7 +671,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
       </div>
     </div>
     <div class="nav-row">
-      <button class="btn-next" id="next-1" onclick="nextStep(1)" disabled>Continuar →</button>
+      <button class="btn-next inactivo" id="next-1" onclick="nextStep(1)">Continuar →</button>
     </div>
   </div>
 
@@ -689,7 +690,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     <div class="star-label" id="starLabel">Toca una estrella para calificar</div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(2)">← Volver</button>
-      <button class="btn-next" id="next-2" onclick="nextStep(2)" disabled>Continuar →</button>
+      <button class="btn-next inactivo" id="next-2" onclick="nextStep(2)">Continuar →</button>
     </div>
   </div>
 
@@ -747,7 +748,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     </div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(4)">← Volver</button>
-      <button class="btn-next" id="next-4" onclick="nextStep(4)" disabled>Continuar →</button>
+      <button class="btn-next inactivo" id="next-4" onclick="nextStep(4)">Continuar →</button>
     </div>
   </div>
 
@@ -775,7 +776,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     </div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(5)">← Volver</button>
-      <button class="btn-next" id="next-5" onclick="nextStep(5)" disabled>Continuar →</button>
+      <button class="btn-next inactivo" id="next-5" onclick="nextStep(5)">Continuar →</button>
     </div>
   </div>
 
@@ -902,7 +903,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     el.classList.add('selected');
     state[group] = el.querySelector('.option-label').textContent.trim();
     var btn = document.getElementById('next-' + currentStep);
-    if (btn) { btn.disabled = false; btn.removeAttribute('disabled'); }
+    if (btn) btn.classList.remove('inactivo');
   }
 
   const starLabels = ['','Muy mala experiencia','Puede mejorar mucho','Aceptable, pero hay que mejorar','¡Muy buena!','¡Excelente! Volvemos pronto'];
@@ -914,7 +915,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     var lbl = document.getElementById('starLabel');
     if (lbl) lbl.textContent = starLabels[val];
     var btn = document.getElementById('next-2');
-    if (btn) { btn.disabled = false; btn.removeAttribute('disabled'); }
+    if (btn) btn.classList.remove('inactivo');
   }
 
   function toggleChip(el) { el.classList.toggle('selected'); }
@@ -924,7 +925,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     document.querySelectorAll('.nps-btn').forEach(function(b) { b.classList.remove('selected'); });
     btn.classList.add('selected');
     var nb = document.getElementById('next-5');
-    if (nb) { nb.disabled = false; nb.removeAttribute('disabled'); }
+    if (nb) nb.classList.remove('inactivo');
   }
 
   // TOAST
