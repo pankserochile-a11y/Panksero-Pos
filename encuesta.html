@@ -403,19 +403,20 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
   background: linear-gradient(to bottom, rgba(255,255,255,0.12), transparent);
   border-radius: inherit;
 }
-.btn-next:hover:not(.inactivo) {
+.btn-next:hover {
   background: var(--orange-dark);
   transform: translateY(-1px);
   box-shadow: 0 8px 28px rgba(247,148,29,0.38);
 }
-.btn-next:active:not(.inactivo) { transform: translateY(0); }
-.btn-next.inactivo {
-  opacity: 0.35;
-  cursor: default;
-  pointer-events: none;
-  box-shadow: none;
-  transform: none;
+.btn-next:active { transform: translateY(0); }
+@keyframes shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
 }
+.shake { animation: shake 0.4s ease; }
 
 /* ──────── SUBMIT BUTTON STATE ──────── */
 .btn-submit {
@@ -671,7 +672,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
       </div>
     </div>
     <div class="nav-row">
-      <button class="btn-next inactivo" id="next-1" onclick="nextStep(1)">Continuar →</button>
+      <button class="btn-next" id="next-1" onclick="nextStep(1)">Continuar →</button>
     </div>
   </div>
 
@@ -690,7 +691,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     <div class="star-label" id="starLabel">Toca una estrella para calificar</div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(2)">← Volver</button>
-      <button class="btn-next inactivo" id="next-2" onclick="nextStep(2)">Continuar →</button>
+      <button class="btn-next" id="next-2" onclick="nextStep(2)">Continuar →</button>
     </div>
   </div>
 
@@ -748,7 +749,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     </div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(4)">← Volver</button>
-      <button class="btn-next inactivo" id="next-4" onclick="nextStep(4)">Continuar →</button>
+      <button class="btn-next" id="next-4" onclick="nextStep(4)">Continuar →</button>
     </div>
   </div>
 
@@ -776,7 +777,7 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     </div>
     <div class="nav-row">
       <button class="btn-back" onclick="prevStep(5)">← Volver</button>
-      <button class="btn-next inactivo" id="next-5" onclick="nextStep(5)">Continuar →</button>
+      <button class="btn-next" id="next-5" onclick="nextStep(5)">Continuar →</button>
     </div>
   </div>
 
@@ -895,15 +896,27 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     updateProgress();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  function nextStep(n) { showStep(n + 1); }
+  function nextStep(n) {
+    if (n === 1 && !state.freq)   { sacudir('step-1'); return; }
+    if (n === 2 && !state.stars)  { sacudir('step-2'); return; }
+    if (n === 4 && !state.mejora) { sacudir('step-4'); return; }
+    if (n === 5 && state.nps === undefined) { sacudir('step-5'); return; }
+    showStep(n + 1);
+  }
   function prevStep(n) { showStep(n - 1); }
+  function sacudir(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('shake');
+    void el.offsetWidth;
+    el.classList.add('shake');
+    setTimeout(function() { el.classList.remove('shake'); }, 500);
+  }
 
   function selectOption(el, group) {
     el.closest('.options-grid').querySelectorAll('.option-card').forEach(function(c) { c.classList.remove('selected'); });
     el.classList.add('selected');
     state[group] = el.querySelector('.option-label').textContent.trim();
-    var btn = document.getElementById('next-' + currentStep);
-    if (btn) btn.classList.remove('inactivo');
   }
 
   const starLabels = ['','Muy mala experiencia','Puede mejorar mucho','Aceptable, pero hay que mejorar','¡Muy buena!','¡Excelente! Volvemos pronto'];
@@ -914,8 +927,6 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     });
     var lbl = document.getElementById('starLabel');
     if (lbl) lbl.textContent = starLabels[val];
-    var btn = document.getElementById('next-2');
-    if (btn) btn.classList.remove('inactivo');
   }
 
   function toggleChip(el) { el.classList.toggle('selected'); }
@@ -924,8 +935,6 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
     state.nps = val;
     document.querySelectorAll('.nps-btn').forEach(function(b) { b.classList.remove('selected'); });
     btn.classList.add('selected');
-    var nb = document.getElementById('next-5');
-    if (nb) nb.classList.remove('inactivo');
   }
 
   // TOAST
