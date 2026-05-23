@@ -898,28 +898,33 @@ textarea::placeholder, input::placeholder { color: #c4a882; font-weight: 400; }
   function prevStep(n) { showStep(n - 1); }
 
   function selectOption(el, group) {
-    el.closest('.options-grid').querySelectorAll('.option-card').forEach(c => c.classList.remove('selected'));
+    el.closest('.options-grid').querySelectorAll('.option-card').forEach(function(c) { c.classList.remove('selected'); });
     el.classList.add('selected');
     state[group] = el.querySelector('.option-label').textContent.trim();
-    const btn = document.getElementById('next-' + currentStep);
-    if (btn) btn.disabled = false;
+    var btn = document.getElementById('next-' + currentStep);
+    if (btn) { btn.disabled = false; btn.removeAttribute('disabled'); }
   }
 
-  const starLabels = ['','Muy mala experiencia 😔','Puede mejorar mucho 😕','Aceptable, pero hay que mejorar 😐','¡Muy buena! 😊','¡Excelente! Volvemos pronto 🌟'];
+  const starLabels = ['','Muy mala experiencia','Puede mejorar mucho','Aceptable, pero hay que mejorar','¡Muy buena!','¡Excelente! Volvemos pronto'];
   function setStar(val) {
     state.stars = val;
-    document.querySelectorAll('.star').forEach((s, i) => s.classList.toggle('active', i < val));
-    document.getElementById('starLabel').textContent = starLabels[val];
-    document.getElementById('next-2').disabled = false;
+    document.querySelectorAll('.star').forEach(function(s, i) {
+      if (i < val) { s.classList.add('active'); } else { s.classList.remove('active'); }
+    });
+    var lbl = document.getElementById('starLabel');
+    if (lbl) lbl.textContent = starLabels[val];
+    var btn = document.getElementById('next-2');
+    if (btn) { btn.disabled = false; btn.removeAttribute('disabled'); }
   }
 
   function toggleChip(el) { el.classList.toggle('selected'); }
 
   function setNPS(val, btn) {
     state.nps = val;
-    document.querySelectorAll('.nps-btn').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('.nps-btn').forEach(function(b) { b.classList.remove('selected'); });
     btn.classList.add('selected');
-    document.getElementById('next-5').disabled = false;
+    var nb = document.getElementById('next-5');
+    if (nb) { nb.disabled = false; nb.removeAttribute('disabled'); }
   }
 
   // TOAST
