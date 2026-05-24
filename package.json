@@ -1,0 +1,17 @@
+{
+  "name": "panksero-whatsapp-agent",
+  "version": "1.0.0",
+  "description": "Agente WhatsApp con IA para Panksero",
+  "type": "module",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js",
+    "dev": "node --watch agent.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2"
+  }
+}
