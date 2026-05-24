@@ -1,0 +1,9 @@
+# Credenciales — nunca subir al repositorio
+.env
+
+# Dependencias Node.js
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
