@@ -10,6 +10,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
+// ── Verificar variables críticas al arrancar ──────────────────────────────────
+const REQUIRED_VARS = ['WHATSAPP_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'ANTHROPIC_API_KEY', 'VERIFY_TOKEN'];
+const missing = REQUIRED_VARS.filter(v => !process.env[v]);
+if (missing.length) {
+  console.error('\n❌ Faltan variables de entorno:', missing.join(', '));
+  console.error('   Configúralas en Railway → Variables\n');
+  process.exit(1);
+}
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Cargar personalidad y conocimiento del negocio al iniciar
@@ -21,7 +30,7 @@ const businessKnowledge = fs.readFileSync(
 
 // Historial de conversaciones en memoria (por número de teléfono)
 const conversations = new Map();
-const MAX_HISTORY = 20; // máximo de mensajes por conversación
+const MAX_HISTORY = 20;
 
 function getHistory(phone) {
   if (!conversations.has(phone)) conversations.set(phone, []);
@@ -69,8 +78,11 @@ async function sendWhatsApp(to, text) {
 
   if (!res.ok) {
     const err = await res.text();
-    console.error(`[WhatsApp] Error enviando a ${to}:`, err);
+    console.error(`[WhatsApp ERROR] status=${res.status} body=${err}`);
+    throw new Error(`WhatsApp API ${res.status}: ${err}`);
   }
+
+  console.log(`[WhatsApp OK] Mensaje enviado a ${to}`);
 }
 
 // ── Webhook: verificación ─────────────────────────────────────────────────────
@@ -83,6 +95,7 @@ app.get('/webhook', (req, res) => {
     console.log('[Webhook] Verificación exitosa');
     res.status(200).send(challenge);
   } else {
+    console.warn(`[Webhook] Token incorrecto: "${token}"`);
     res.sendStatus(403);
   }
 });
@@ -91,45 +104,68 @@ app.get('/webhook', (req, res) => {
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200); // Responder a Meta inmediatamente
 
+  // Log del payload completo para diagnóstico
+  console.log('[Webhook] Payload:', JSON.stringify(req.body, null, 2));
+
   try {
     const entry = req.body?.entry?.[0];
     const changes = entry?.changes?.[0];
     const value = changes?.value;
 
-    if (!value?.messages?.length) return;
+    // Ignorar notificaciones de estado (entregado, leído, etc.)
+    if (value?.statuses?.length) {
+      console.log('[Webhook] Notificación de estado, ignorada');
+      return;
+    }
+
+    if (!value?.messages?.length) {
+      console.log('[Webhook] Sin mensajes en el payload, ignorado');
+      return;
+    }
 
     const msg = value.messages[0];
     const from = msg.from;
     const name = value.contacts?.[0]?.profile?.name ?? 'Cliente';
 
-    let userText = '';
-    if (msg.type === 'text') {
-      userText = msg.text.body.trim();
-    } else {
-      // Tipos no soportados (audio, imagen, etc.)
+    console.log(`[Mensaje] De: ${name} (${from}) | Tipo: ${msg.type}`);
+
+    if (msg.type !== 'text') {
       await sendWhatsApp(from, 'Por ahora solo puedo leer mensajes de texto. ¿En qué te ayudo? 😊');
       return;
     }
 
-    console.log(`[${new Date().toLocaleTimeString()}] ${name} (${from}): ${userText}`);
+    const userText = msg.text.body.trim();
+    console.log(`[Texto] "${userText}"`);
 
     const reply = await askClaude(from, userText);
-    await sendWhatsApp(from, reply);
+    console.log(`[Panksi] "${reply}"`);
 
-    console.log(`[Panksi → ${from}]: ${reply}`);
+    await sendWhatsApp(from, reply);
   } catch (err) {
-    console.error('[Error procesando mensaje]', err);
+    console.error('[ERROR]', err.message);
+    console.error(err.stack);
   }
 });
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Health check + estado de variables ───────────────────────────────────────
 app.get('/', (req, res) => {
-  res.json({ status: 'ok', agent: 'Panksero WhatsApp Agent', version: '1.0.0' });
+  res.json({
+    status: 'ok',
+    agent: 'Panksero WhatsApp Agent',
+    version: '1.0.0',
+    vars: {
+      WHATSAPP_TOKEN: process.env.WHATSAPP_TOKEN ? '✅ configurado' : '❌ falta',
+      WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID ? '✅ configurado' : '❌ falta',
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '✅ configurado' : '❌ falta',
+      VERIFY_TOKEN: process.env.VERIFY_TOKEN ? '✅ configurado' : '❌ falta',
+    },
+  });
 });
 
 const PORT = process.env.PORT ?? 3000;
 app.listen(PORT, () => {
   console.log(`\n🟢 Panksero WhatsApp Agent corriendo en puerto ${PORT}`);
-  console.log(`   Webhook: POST /webhook`);
-  console.log(`   Health:  GET  /\n`);
+  console.log(`   WHATSAPP_PHONE_NUMBER_ID: ${process.env.WHATSAPP_PHONE_NUMBER_ID}`);
+  console.log(`   ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'sk-ant-***' : '❌ NO CONFIGURADA'}`);
+  console.log(`   WHATSAPP_TOKEN: ${process.env.WHATSAPP_TOKEN ? '***configurado***' : '❌ NO CONFIGURADO'}\n`);
 });
