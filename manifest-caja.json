@@ -1,0 +1,19 @@
+{
+  "name": "Panksero Caja",
+  "short_name": "Caja",
+  "description": "Control de caja diario · Junio 2026",
+  "start_url": "./caja.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0A0A0A",
+  "theme_color": "#F59E0B",
+  "icons": [
+    {
+      "src": "./icon-caja.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
