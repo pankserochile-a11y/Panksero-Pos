@@ -62,9 +62,6 @@ const DIAS = Array.from({length:30}, (_, i) => {
   };
 });
 
-/* Días hábiles de junio (excluye domingos) */
-const DIAS_HABILES = DIAS.filter(d => !d.dom).length;
-
 /* Total de obligaciones del mes */
 const TOTAL_PAGOS = PAGOS.reduce((s, p) => s + p.monto, 0);
 
@@ -186,10 +183,8 @@ function App() {
   const totC   = dias_.reduce((s,k) => s + comReg(ventas[k]), 0);
   const prom   = n > 0 ? totN / n : 0;
 
-  /* Proyección sobre días hábiles restantes (sin domingos) */
-  const diasHabilesRegistrados = dias_.filter(k => !DIAS.find(d => d.key===k)?.dom).length;
-  const diasHabilesRestantes   = DIAS_HABILES - diasHabilesRegistrados;
-  const proy = totN + prom * diasHabilesRestantes;
+  /* Proyección sobre los 30 días del mes */
+  const proy = totN + prom * (30 - n);
 
   /* Día actual seleccionado */
   const regDia = ventas[dia];
