@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>Panksero · Caja Junio 2026</title>
+<link rel="manifest" href="./manifest-caja.json"/>
+<meta name="theme-color" content="#F59E0B"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Caja Pank"/>
+<link rel="apple-touch-icon" href="./icon-caja.svg"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0A0A0A;color:#E5E5E5;font-family:monospace;min-height:100vh}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useEffect, useCallback, memo} = React;
+
+/* ── Constantes de negocio ─────────────────────────────────────────────── */
+const PE_DIARIO   = 241905;
+const META_MES    = 9000000;
+const STORAGE_KEY = "panksero-caja-v3";
+
+const MEDIOS = [
+  { id:"efectivo",      label:"Efectivo",           icon:"💵", color:"#34D399", comision:0      },
+  { id:"transferencia", label:"Transferencia",       icon:"🏦", color:"#60A5FA", comision:0      },
+  { id:"bancochile",    label:"Banco Chile Débito",  icon:"🏛", color:"#2563EB", comision:0.008  },
+  { id:"getnet",        label:"GetNet Santander",    icon:"💳", color:"#A78BFA", comision:0.018  },
+  { id:"mp",            label:"Mercado Pago",        icon:"📱", color:"#F59E0B", comision:0.0349 },
+];
+
+const BUCKETS = [
+  { id:"insumos",  label:"INSUMOS",  pct:0.27, color:"#F59E0B", icon:"🌾" },
+  { id:"fijos",    label:"FIJOS",    pct:0.53, color:"#60A5FA", icon:"🏢" },
+  { id:"utilidad", label:"UTILIDAD", pct:0.14, color:"#34D399", icon:"💰" },
+  { id:"buffer",   label:"BUFFER",   pct:0.06, color:"#A78BFA", icon:"🛡" },
+];
+
+const PAGOS = [
+  { dia:10, nombre:"Luz + Gas + Agua",    monto:350900  },
+  { dia:10, nombre:"Contador + Software", monto:112000  },
+  { dia:10, nombre:"Mantención + publi.", monto:55000   },
+  { dia:25, nombre:"Sueldos líquidos",    monto:2500000 },
+  { dia:25, nombre:"Imposiciones",        monto:200000  },
+  { dia:25, nombre:"Crédito banco",       monto:1000000 },
+  { dia:25, nombre:"Arriendo local",      monto:803400  },
+];
+
+const DIAS = Array.from({length:30}, (_, i) => {
+  const d = new Date(2026, 5, i + 1);
+  return {
+    num: i + 1,
+    key: `2026-06-${String(i+1).padStart(2,"0")}`,
+    dia: ["Dom","Lun","Mar","Mie","Jue","Vie","Sab"][d.getDay()],
+    dom: d.getDay() === 0,
+  };
+});
+
+/* Total de obligaciones del mes */
+const TOTAL_PAGOS = PAGOS.reduce((s, p) => s + p.monto, 0);
+
+/* ── Storage con fallback a localStorage ──────────────────────────────── */
+const storage = {
+  async get(key) {
+    try { return await window.storage.get(key); }
+    catch (_) {
+      const v = localStorage.getItem(key);
+      return v ? {value: v} : null;
+    }
+  },
+  async set(key, value) {
+    try { await window.storage.set(key, value); }
+    catch (_) { localStorage.setItem(key, value); }
+  },
+};
+
+/* ── Utilidades ────────────────────────────────────────────────────────── */
+const fmt      = n => "$" + Math.round(n).toLocaleString("es-CL");
+const fmtK     = n => Math.abs(n)>=1e6 ? "$"+(n/1e6).toFixed(2)+"M"
+                    : Math.abs(n)>=1000 ? "$"+Math.round(n/1000)+"K"
+                    : fmt(n);
+const brutoReg = r => !r ? 0 : typeof r==="number" ? r : MEDIOS.reduce((s,m)=>s+(r[m.id]||0),0);
+const netoReg  = r => !r ? 0 : typeof r==="number" ? r : MEDIOS.reduce((s,m)=>s+(r[m.id]||0)*(1-m.comision),0);
+const comReg   = r => !r||typeof r==="number" ? 0 : MEDIOS.reduce((s,m)=>s+(r[m.id]||0)*m.comision,0);
+const EMPTY_INP = () => MEDIOS.reduce((o,m) => ({...o,[m.id]:""}), {});
+
+/* Día inicial: hoy si estamos en junio 2026, si no el día 1 */
+const hoy = new Date().toISOString().slice(0, 10);
+const DIA_INICIAL = DIAS.some(d => d.key === hoy) ? hoy : "2026-06-01";
+
+/* ── TabBtn fuera del componente para evitar recreación en cada render ── */
+const TabBtn = memo(({id, lbl, active, onClick}) => (
+  <button
+    onClick={() => onClick(id)}
+    style={{
+      background:      active ? "#F59E0B" : "transparent",
+      color:           active ? "#000" : "#555",
+      border:          "none",
+      padding:         "8px 14px",
+      fontSize:        10,
+      fontFamily:      "monospace",
+      letterSpacing:   1,
+      textTransform:   "uppercase",
+      cursor:          "pointer",
+      fontWeight:      active ? 700 : 400,
+      borderRadius:    active ? "5px 5px 0 0" : 0,
+      whiteSpace:      "nowrap",
+    }}
+  >{lbl}</button>
+));
+
+/* ── Componente principal ──────────────────────────────────────────────── */
+function App() {
+  const [ventas, setVentas] = useState({});
+  const [tab,    setTab]    = useState("ingresar");
+  const [dia,    setDia]    = useState(DIA_INICIAL);
+  const [inp,    setInp]    = useState(EMPTY_INP());
+  const [st,     setSt]     = useState(""); // "ok" | "err" | ""
+  const [load,   setLoad]   = useState(true);
+
+  /* Carga inicial desde storage */
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await storage.get(STORAGE_KEY);
+        if (r?.value) setVentas(JSON.parse(r.value));
+      } catch (_) {}
+      setLoad(false);
+    })();
+  }, []);
+
+  const save = useCallback(async data => {
+    try {
+      await storage.set(STORAGE_KEY, JSON.stringify(data));
+      setSt("ok");
+      setTimeout(() => setSt(""), 2000);
+    } catch (_) { setSt("err"); }
+  }, []);
+
+  /* Sincroniza inputs cuando cambia el día seleccionado */
+  useEffect(() => {
+    const r = ventas[dia];
+    if (r && typeof r === "object")
+      setInp(MEDIOS.reduce((o,m) => ({...o,[m.id]:String(r[m.id]||"")}), {}));
+    else
+      setInp(EMPTY_INP());
+  }, [dia, ventas]);
+
+  const registrar = () => {
+    const reg = {}; let ok = false;
+    MEDIOS.forEach(m => {
+      const v = parseInt(inp[m.id]||"0", 10) || 0;
+      reg[m.id] = v;
+      if (v > 0) ok = true;
+    });
+    if (!ok) return;
+    const nv = {...ventas, [dia]: reg};
+    setVentas(nv);
+    save(nv);
+  };
+
+  const borrar = k => {
+    const fecha = DIAS.find(d => d.key === k);
+    const label = fecha ? `${fecha.dia} ${fecha.num} jun` : k;
+    if (!window.confirm(`¿Borrar el registro del ${label}?\nEsta acción no se puede deshacer.`)) return;
+    const nv = {...ventas};
+    delete nv[k];
+    setVentas(nv);
+    save(nv);
+  };
+
+  /* ── Totales ─────────────────────────────────────────────────────────── */
+  const dias_  = Object.keys(ventas).filter(k => brutoReg(ventas[k]) > 0).sort();
+  const n      = dias_.length;
+  const totN   = dias_.reduce((s,k) => s + netoReg(ventas[k]), 0);
+  const totB   = dias_.reduce((s,k) => s + brutoReg(ventas[k]), 0);
+  const totC   = dias_.reduce((s,k) => s + comReg(ventas[k]), 0);
+  const prom   = n > 0 ? totN / n : 0;
+
+  /* Proyección sobre los 30 días del mes */
+  const proy = totN + prom * (30 - n);
+
+  /* Día actual seleccionado */
+  const regDia = ventas[dia];
+  const netoD  = netoReg(regDia);
+  const brutoD = brutoReg(regDia);
+  const comD   = comReg(regDia);
+
+  /* Preview de lo que se está ingresando */
+  const inpB = MEDIOS.reduce((s,m) => s + (parseInt(inp[m.id]||"0",10)||0), 0);
+  const inpN = MEDIOS.reduce((s,m) => s + (parseInt(inp[m.id]||"0",10)||0)*(1-m.comision), 0);
+
+  /* Techo dinámico de la barra del historial */
+  const maxNeto = Math.max(
+    dias_.reduce((mx,k) => Math.max(mx, netoReg(ventas[k])), 0),
+    PE_DIARIO * 1.5
+  );
+
+  /* Cobertura de pagos: FIJOS + BUFFER acumulados */
+  const fijosAcum   = totN * 0.53;
+  const bufferAcum  = totN * 0.06;
+  const coberturaDisp = fijosAcum + bufferAcum;
+
+  const C = {bg:"#0A0A0A", panel:"#111", borde:"#1E1E1E", txt:"#E5E5E5", sub:"#555"};
+
+  if (load) return (
+    <div style={{background:C.bg,height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:"#333",fontFamily:"monospace",fontSize:12}}>
+      cargando...
+    </div>
+  );
+
+  return (
+    <div style={{background:C.bg, minHeight:"100vh", fontFamily:"monospace", color:C.txt}}>
+
+      {/* ── HEADER ─────────────────────────────────────────────────────── */}
+      <div style={{background:C.panel, borderBottom:`1px solid ${C.borde}`, padding:"14px 14px 0"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div>
+            <div style={{fontSize:10,color:"#444",letterSpacing:3}}>PANKSERO · JUNIO 2026</div>
+            <div style={{fontSize:11,color:"#333",marginTop:2}}>Control de caja diario</div>
+          </div>
+          <div style={{fontSize:10,color:st==="ok"?"#34D399":st==="err"?"#EF4444":"transparent"}}>
+            {st==="ok"?"GUARDADO":st==="err"?"ERROR":"·"}
+          </div>
+        </div>
+
+        {/* KPIs */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:10}}>
+          {[
+            {l:"NETO MES",   v:fmtK(totN),             c:"#F59E0B"},
+            {l:"PROM/DÍA",   v:n>0?fmtK(prom):"--",    c:prom>=PE_DIARIO?"#34D399":"#EF4444"},
+            {l:"PROYECCIÓN", v:n>0?fmtK(proy):"--",    c:proy>=META_MES?"#34D399":"#F59E0B"},
+          ].map((k,i) => (
+            <div key={i} style={{background:"#0D0D0D",borderRadius:6,padding:"8px 10px"}}>
+              <div style={{fontSize:8,color:"#444",letterSpacing:1,marginBottom:3}}>{k.l}</div>
+              <div style={{fontSize:14,fontWeight:700,color:k.c}}>{k.v}</div>
+            </div>
+          ))}
+        </div>
+
+        {n>0 && (
+          <div style={{background:"#0D0D0D",borderRadius:6,padding:"6px 10px",marginBottom:10,display:"flex",justifyContent:"space-between",fontSize:9}}>
+            <span style={{color:C.sub}}>Comisiones pagadas (MP+GetNet+BancoChile)</span>
+            <span style={{color:"#EF4444",fontWeight:700}}>-{fmt(totC)}</span>
+          </div>
+        )}
+
+        {/* Barra de progreso meta */}
+        <div style={{marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:"#333",marginBottom:3}}>
+            <span>{n} días · PE: {fmt(PE_DIARIO)}/día</span>
+            <span>{Math.round((totN/META_MES)*100)}% meta $9M</span>
+          </div>
+          <div style={{background:"#1A1A1A",borderRadius:99,height:3}}>
+            <div style={{background:"#F59E0B",width:`${Math.min(100,(totN/META_MES)*100)}%`,height:"100%",borderRadius:99}}/>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",overflowX:"auto",gap:2}}>
+          {[["ingresar","Ingresar"],["acumulado","Acumulado"],["historial","Historial"],["pagos","Pagos"]].map(([id,lbl]) => (
+            <TabBtn key={id} id={id} lbl={lbl} active={tab===id} onClick={setTab}/>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:14}}>
+
+        {/* ── TAB INGRESAR ───────────────────────────────────────────────── */}
+        {tab==="ingresar" && (
+          <div>
+            <div style={{marginBottom:10}}>
+              <div style={{fontSize:9,color:C.sub,marginBottom:4}}>DÍA</div>
+              <select
+                value={dia}
+                onChange={e => setDia(e.target.value)}
+                style={{width:"100%",background:"#0D0D0D",border:`1px solid ${C.borde}`,color:C.txt,padding:"10px",borderRadius:6,fontSize:13,fontFamily:"monospace",boxSizing:"border-box"}}
+              >
+                {DIAS.map(d => (
+                  <option key={d.key} value={d.key}>
+                    {d.dia} {d.num} jun{ventas[d.key]?` · ${fmtK(netoReg(ventas[d.key]))} ✓`:""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{background:C.panel,border:`1px solid ${C.borde}`,borderRadius:8,padding:14,marginBottom:12}}>
+              <div style={{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:12}}>INGRESAR POR MEDIO DE PAGO</div>
+
+              {MEDIOS.map(m => (
+                <div key={m.id} style={{marginBottom:14}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span style={{fontSize:16}}>{m.icon}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:m.color}}>{m.label}</span>
+                      {m.comision>0
+                        ? <span style={{fontSize:9,color:"#555",background:"#1A1A1A",padding:"2px 6px",borderRadius:99}}>{(m.comision*100).toFixed(2)}%</span>
+                        : <span style={{fontSize:9,color:"#34D399",background:"#071410",padding:"2px 6px",borderRadius:99}}>sin comisión</span>
+                      }
+                    </div>
+                    {m.comision>0 && inp[m.id] && parseInt(inp[m.id]||"0",10)>0 && (
+                      <span style={{fontSize:9,color:"#EF4444"}}>-{fmt((parseInt(inp[m.id],10)||0)*m.comision)}</span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="0"
+                    value={inp[m.id]}
+                    onChange={e => setInp(prev => ({...prev,[m.id]:e.target.value}))}
+                    style={{width:"100%",background:"#0D0D0D",border:`1px solid ${m.color}55`,color:m.color,padding:"10px",borderRadius:6,fontSize:20,fontFamily:"monospace",fontWeight:700,boxSizing:"border-box"}}
+                  />
+                </div>
+              ))}
+
+              {inpB > 0 && (
+                <div style={{background:"#0D0D0D",borderRadius:6,padding:10,marginTop:4}}>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:4}}>
+                    <span style={{color:"#555"}}>Bruto</span>
+                    <span style={{color:"#888"}}>{fmt(inpB)}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:10,marginBottom:6}}>
+                    <span style={{color:"#555"}}>Comisiones</span>
+                    <span style={{color:"#EF4444"}}>-{fmt(inpB-inpN)}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:15,fontWeight:700,borderTop:"1px solid #1A1A1A",paddingTop:6}}>
+                    <span style={{color:"#AAA"}}>NETO REAL</span>
+                    <span style={{color:"#F59E0B"}}>{fmt(inpN)}</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                onClick={registrar}
+                style={{width:"100%",background:"#F59E0B",color:"#000",border:"none",padding:12,borderRadius:6,fontSize:13,fontFamily:"monospace",fontWeight:700,letterSpacing:2,cursor:"pointer",marginTop:12}}
+              >
+                REGISTRAR
+              </button>
+            </div>
+
+            {netoD > 0 && (
+              <>
+                <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:8}}>
+                  RESULTADO — {DIAS.find(d=>d.key===dia)?.dia?.toUpperCase()} {DIAS.find(d=>d.key===dia)?.num} JUNIO
+                </div>
+
+                <div style={{background:C.panel,border:`1px solid ${C.borde}`,borderRadius:8,padding:12,marginBottom:10}}>
+                  {MEDIOS.map(m => {
+                    const v = (regDia&&typeof regDia==="object") ? (regDia[m.id]||0) : 0;
+                    if (!v) return null;
+                    return (
+                      <div key={m.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #141414",fontSize:11}}>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <span>{m.icon}</span>
+                          <span style={{color:m.color}}>{m.label}</span>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <span style={{color:"#888",fontSize:9,marginRight:8}}>{fmt(v)}</span>
+                          <span style={{color:m.color,fontWeight:700}}>{fmt(v*(1-m.comision))}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div style={{display:"flex",justifyContent:"space-between",paddingTop:8,marginTop:4,borderTop:"1px solid #2A2A2A"}}>
+                    <div>
+                      <div style={{fontSize:9,color:"#555"}}>Bruto</div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#888"}}>{fmt(brutoD)}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:9,color:"#555"}}>Neto real</div>
+                      <div style={{fontSize:18,fontWeight:700,color:"#F59E0B"}}>{fmt(netoD)}</div>
+                    </div>
+                  </div>
+                  {comD>0 && (
+                    <div style={{fontSize:9,color:"#EF4444",textAlign:"right",marginTop:4}}>-{fmt(comD)} en comisiones</div>
+                  )}
+                </div>
+
+                <div style={{background:netoD>=PE_DIARIO?"#071410":"#150505",border:`1px solid ${netoD>=PE_DIARIO?"#34D39933":"#EF444433"}`,borderRadius:8,padding:"10px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:11,color:"#666"}}>{netoD>=PE_DIARIO?"Sobre el PE":"Bajo el PE"}</span>
+                  <span style={{fontSize:14,fontWeight:700,color:netoD>=PE_DIARIO?"#34D399":"#EF4444"}}>
+                    {netoD>=PE_DIARIO?"+":""}{fmt(netoD-PE_DIARIO)}
+                  </span>
+                </div>
+
+                {BUCKETS.map(b => (
+                  <div key={b.id} style={{background:"#0F0F0F",border:`1px solid ${b.color}22`,borderLeft:`3px solid ${b.color}`,borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span>{b.icon}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:b.color}}>{b.label}</span>
+                      <span style={{fontSize:9,color:"#444"}}>{Math.round(b.pct*100)}%</span>
+                    </div>
+                    <div style={{fontSize:22,fontWeight:700,color:b.color}}>{fmt(netoD*b.pct)}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB ACUMULADO ──────────────────────────────────────────────── */}
+        {tab==="acumulado" && (
+          <div>
+            {n===0
+              ? <div style={{textAlign:"center",color:"#2A2A2A",padding:"60px 0",fontSize:12}}>Sin datos aún.<br/>Empieza ingresando hoy.</div>
+              : (
+              <>
+                <div style={{background:C.panel,border:`1px solid ${C.borde}`,borderRadius:8,padding:14,marginBottom:14}}>
+                  <div style={{fontSize:9,color:C.sub,letterSpacing:2,marginBottom:10}}>RESUMEN JUNIO</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {[
+                      {l:"Bruto acumulado",   v:fmt(totB),                c:"#888"},
+                      {l:"Comisiones",        v:"-"+fmt(totC),            c:"#EF4444"},
+                      {l:"NETO REAL",         v:fmt(totN),                c:"#F59E0B"},
+                      {l:"Días / Proyección", v:`${n}d · ${fmtK(proy)}`, c:proy>=META_MES?"#34D399":"#F59E0B"},
+                    ].map((x,i) => (
+                      <div key={i} style={{background:"#0D0D0D",borderRadius:6,padding:"10px 12px"}}>
+                        <div style={{fontSize:8,color:"#444",marginBottom:3}}>{x.l.toUpperCase()}</div>
+                        <div style={{fontSize:15,fontWeight:700,color:x.c}}>{x.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:10}}>ACUMULADO POR MEDIO DE PAGO</div>
+                {MEDIOS.map(m => {
+                  const b = dias_.reduce((s,k) => {
+                    const r = ventas[k];
+                    return s + ((r&&typeof r==="object")?(r[m.id]||0):0);
+                  }, 0);
+                  if (!b) return null;
+                  return (
+                    <div key={m.id} style={{background:"#0F0F0F",border:`1px solid ${m.color}22`,borderLeft:`3px solid ${m.color}`,borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <span style={{fontSize:16}}>{m.icon}</span>
+                        <span style={{fontSize:12,fontWeight:700,color:m.color}}>{m.label}</span>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <div style={{fontSize:16,fontWeight:700,color:m.color}}>{fmt(b*(1-m.comision))}</div>
+                        {b*m.comision>0 && <div style={{fontSize:9,color:"#EF4444"}}>-{fmt(b*m.comision)} comisión</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{fontSize:9,color:"#444",letterSpacing:2,margin:"14px 0 10px"}}>SOBRES ACUMULADOS</div>
+                {BUCKETS.map(b => {
+                  const acum = totN * b.pct;
+                  const meta = META_MES * b.pct;
+                  const pct  = Math.min(100, (acum/meta)*100);
+                  return (
+                    <div key={b.id} style={{background:"#0F0F0F",border:`1px solid ${b.color}22`,borderLeft:`3px solid ${b.color}`,borderRadius:8,padding:12,marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <span>{b.icon}</span>
+                          <span style={{fontSize:11,fontWeight:700,color:b.color}}>{b.label}</span>
+                          <span style={{fontSize:9,color:"#444"}}>{Math.round(b.pct*100)}%</span>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:16,fontWeight:700,color:b.color}}>{fmt(acum)}</div>
+                          <div style={{fontSize:8,color:"#555"}}>{Math.round(pct)}% de {fmtK(meta)}</div>
+                        </div>
+                      </div>
+                      <div style={{background:"#1A1A1A",borderRadius:99,height:4}}>
+                        <div style={{background:b.color,width:`${pct}%`,height:"100%",borderRadius:99}}/>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div style={{background:prom>=PE_DIARIO?"#071410":"#150505",border:`1px solid ${prom>=PE_DIARIO?"#34D39933":"#EF444433"}`,borderRadius:8,padding:14,textAlign:"center"}}>
+                  <div style={{fontSize:9,color:"#555",marginBottom:6}}>PROMEDIO NETO vs PE DIARIO</div>
+                  <div style={{fontSize:26,fontWeight:700,color:prom>=PE_DIARIO?"#34D399":"#EF4444"}}>
+                    {prom>=PE_DIARIO?"+":""}{fmt(prom-PE_DIARIO)}
+                  </div>
+                  <div style={{fontSize:9,color:"#555",marginTop:4}}>Tu prom: {fmt(prom)} · PE: {fmt(PE_DIARIO)}</div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB HISTORIAL ──────────────────────────────────────────────── */}
+        {tab==="historial" && (
+          <div>
+            <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:10}}>TODOS LOS DÍAS — JUNIO 2026</div>
+            {DIAS.map(d => {
+              const r     = ventas[d.key];
+              const neto  = netoReg(r);
+              const bruto = brutoReg(r);
+              const sobre = neto >= PE_DIARIO;
+              return (
+                <div
+                  key={d.key}
+                  style={{
+                    display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"9px 10px",borderRadius:6,marginBottom:4,
+                    background:neto>0?"#111":"#0A0A0A",
+                    border:`1px solid ${neto>0?(sobre?"#34D39918":"#EF444418"):"#141414"}`,
+                    opacity:d.dom&&!neto?0.35:1,
+                  }}
+                >
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:32,textAlign:"center"}}>
+                      <div style={{fontSize:15,fontWeight:700,color:neto>0?C.txt:"#2A2A2A"}}>{d.num}</div>
+                      <div style={{fontSize:8,color:"#333"}}>{d.dia}</div>
+                    </div>
+                    {neto > 0 && (
+                      <div style={{width:50}}>
+                        <div style={{background:"#1A1A1A",borderRadius:99,height:3}}>
+                          <div style={{
+                            background: sobre?"#34D399":"#EF4444",
+                            width:`${Math.min(100,(neto/maxNeto)*100)}%`,
+                            height:"100%",borderRadius:99,
+                          }}/>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    {neto > 0 ? (
+                      <>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{fontSize:14,fontWeight:700,color:sobre?"#34D399":"#EF4444"}}>{fmt(neto)}</div>
+                          {bruto!==neto && <div style={{fontSize:8,color:"#EF4444"}}>-{fmt(bruto-neto)} com.</div>}
+                        </div>
+                        <button
+                          onClick={() => borrar(d.key)}
+                          title="Borrar este día"
+                          style={{background:"none",border:"none",color:"#2A2A2A",cursor:"pointer",fontSize:14,padding:"2px 6px",lineHeight:1}}
+                        >✕</button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => { setDia(d.key); setTab("ingresar"); }}
+                        style={{background:"none",border:"1px solid #1E1E1E",color:"#333",cursor:"pointer",fontSize:8,padding:"4px 8px",borderRadius:4,fontFamily:"monospace",letterSpacing:1}}
+                      >+ INGRESAR</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {n > 0 && (
+              <div style={{background:C.panel,border:"1px solid #F59E0B22",borderRadius:8,padding:"12px 14px",marginTop:8,display:"flex",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:9,color:"#555"}}>NETO TOTAL</div>
+                  <div style={{fontSize:9,color:"#444"}}>{n} días</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:20,fontWeight:700,color:"#F59E0B"}}>{fmt(totN)}</div>
+                  <div style={{fontSize:9,color:"#EF4444"}}>-{fmt(totC)} comisiones</div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── TAB PAGOS ──────────────────────────────────────────────────── */}
+        {tab==="pagos" && (
+          <div>
+            <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:12}}>CALENDARIO DE PAGOS · JUNIO</div>
+
+            {[10, 25].map(d => {
+              const ps         = PAGOS.filter(p => p.dia === d);
+              const tot        = ps.reduce((a,p) => a+p.monto, 0);
+              /* Cobertura acumulativa: el día 25 evalúa si alcanza para día 10 + día 25 juntos */
+              const pagosCumul = PAGOS.filter(p => p.dia <= d).reduce((a,p) => a+p.monto, 0);
+              const cub        = Math.min(100, (coberturaDisp / pagosCumul) * 100);
+              const col        = d===10 ? "#60A5FA" : "#EF4444";
+              return (
+                <div key={d} style={{background:"#0F0F0F",border:`1px solid ${col}33`,borderLeft:`3px solid ${col}`,borderRadius:8,padding:14,marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:col}}>DÍA {d}</div>
+                      <div style={{fontSize:9,color:"#444"}}>{d===10?"Servicios":"Sueldos + arriendo + crédito"}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:18,fontWeight:700,color:col}}>{fmt(tot)}</div>
+                      <div style={{fontSize:8,color:"#444"}}>a pagar</div>
+                    </div>
+                  </div>
+                  {ps.map((p,i) => (
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"5px 0",borderBottom:i<ps.length-1?"1px solid #141414":"none"}}>
+                      <span style={{color:"#777"}}>› {p.nombre}</span>
+                      <span style={{color:"#CCC",fontWeight:700}}>{fmt(p.monto)}</span>
+                    </div>
+                  ))}
+                  {n > 0 && (
+                    <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1A1A1A"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:"#555",marginBottom:4}}>
+                        <span>FIJOS + BUFFER acumulados</span>
+                        <span>{Math.round(cub)}% cubierto</span>
+                      </div>
+                      <div style={{background:"#1A1A1A",borderRadius:99,height:4}}>
+                        <div style={{background:cub>=100?"#34D399":col,width:`${cub}%`,height:"100%",borderRadius:99}}/>
+                      </div>
+                      <div style={{fontSize:8,color:"#444",marginTop:4}}>
+                        {coberturaDisp>=pagosCumul
+                          ? `✓ Cubierto hasta el día ${d}`
+                          : `Faltan ${fmt(pagosCumul-coberturaDisp)} · disponible: ${fmt(coberturaDisp)}`
+                        }
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Resumen total de obligaciones del mes */}
+            {n > 0 && (
+              <div style={{
+                background:"#0F0F0F",
+                border:`1px solid ${coberturaDisp>=TOTAL_PAGOS?"#34D39933":"#EF444433"}`,
+                borderLeft:`3px solid ${coberturaDisp>=TOTAL_PAGOS?"#34D399":"#EF4444"}`,
+                borderRadius:8,padding:"12px 14px",marginBottom:12,
+              }}>
+                <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:8}}>RESUMEN OBLIGACIONES JUNIO</div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:9}}>
+                  <span style={{color:"#555"}}>Total a pagar (día 10 + día 25)</span>
+                  <span style={{color:"#CCC",fontWeight:700}}>{fmt(TOTAL_PAGOS)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:9}}>
+                  <span style={{color:"#555"}}>FIJOS + BUFFER disponible</span>
+                  <span style={{color:coberturaDisp>=TOTAL_PAGOS?"#34D399":"#F59E0B",fontWeight:700}}>{fmt(coberturaDisp)}</span>
+                </div>
+                {coberturaDisp < TOTAL_PAGOS ? (
+                  <div style={{fontSize:8,color:"#EF4444"}}>
+                    Déficit: {fmt(TOTAL_PAGOS-coberturaDisp)} · se cubre 100% con ventas de {fmtK(TOTAL_PAGOS/0.59)}
+                  </div>
+                ) : (
+                  <div style={{fontSize:8,color:"#34D399"}}>✓ Todas las obligaciones cubiertas</div>
+                )}
+              </div>
+            )}
+
+            <div style={{background:C.panel,border:`1px solid ${C.borde}`,borderRadius:8,padding:14}}>
+              <div style={{fontSize:9,color:"#444",letterSpacing:2,marginBottom:10}}>POR CADA $100 NETO</div>
+              {BUCKETS.map(b => (
+                <div key={b.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"6px 0",borderBottom:"1px solid #141414"}}>
+                  <span style={{color:"#777"}}>{b.icon} {b.label}</span>
+                  <span style={{color:b.color,fontWeight:700}}>${Math.round(b.pct*100)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{marginTop:20,fontSize:8,color:"#1E1E1E",textAlign:"center",letterSpacing:2}}>
+          PANKSERO · JUNIO 2026
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App/>);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw-caja.js');
+}
+</script>
+</body>
+</html>
