@@ -46,6 +46,14 @@ async function api(action, body=null) {
 const fmt = n => '$' + Math.round(n||0).toLocaleString('es-CL');
 const localDate = () => new Date().toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});
 const localTime = () => new Date().toLocaleTimeString('es-CL',{timeZone:'America/Santiago',hour:'2-digit',minute:'2-digit'});
+// Extrae la fecha local (YYYY-MM-DD) de una venta, priorizando el campo date (ya localizado)
+// sobre datetime (UTC), para evitar desfases de zona horaria nocturna.
+const getSaleDate = s => {
+  if(s.date && /^\d{4}-\d{2}-\d{2}/.test(String(s.date))) return String(s.date).substring(0,10);
+  const raw = String(s.datetime||s.date||'');
+  if(raw.includes('T')&&raw.includes('Z')) return new Date(raw).toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});
+  return raw.substring(0,10);
+};
 const today = localDate();
 
 const S = {
@@ -348,12 +356,7 @@ function App() {
   };
 
   const realizarCierre = () => {
-    const todaySales = sales.filter(s=>{
-      const raw=s.datetime||s.date||'';
-      let d=raw.substring(0,10);
-      if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}
-      return d===localDate();
-    });
+    const todaySales = sales.filter(s=>getSaleDate(s)===localDate());
     const total = todaySales.reduce((a,s)=>a+s.total,0);
     const byMethod = {'Efectivo':0,'Getnet':0,'Transferencia':0,'Crédito':0};
     todaySales.forEach(s=>{ const nm=normMethod(s.method||s.payment); if(byMethod[nm]!==undefined) byMethod[nm]+=s.total; });
@@ -384,10 +387,7 @@ function App() {
   };
 
   // ── Datos calculados ──
-  const rSales=sales.filter(s=>{const raw=s.datetime||s.date||'';
-    let d=raw.substring(0,10);
-    if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}
-    return d===reportDate;});
+  const rSales=sales.filter(s=>getSaleDate(s)===reportDate);
   const rTotal=rSales.reduce((a,s)=>a+s.total,0);
   const rByM={'Efectivo':0,'Getnet':0,'Transferencia':0,'Crédito':0};
   rSales.forEach(s=>{const nm=normMethod(s.method||s.payment);if(rByM[nm]!==undefined)rByM[nm]+=s.total;});
@@ -470,7 +470,7 @@ function App() {
             </div>
 
             {/* Resumen del día */}
-            {(()=>{const ts=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===localDate();});const tt=ts.reduce((a,s)=>a+s.total,0);return(
+            {(()=>{const ts=sales.filter(s=>getSaleDate(s)===localDate());const tt=ts.reduce((a,s)=>a+s.total,0);return(
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,padding:'7px 12px',background:'#fff9f2',borderBottom:'1px solid #e8d5b7'}}>
                 {[['Ventas hoy',fmt(tt)],['Transacciones',ts.length],['Ticket prom.',ts.length?fmt(Math.round(tt/ts.length)):'-']].map(([l,v])=>(
                   <div key={l} style={{background:'#f5ede0',borderRadius:7,padding:'5px 10px'}}>
@@ -898,7 +898,7 @@ function App() {
 
       {/* ── Modal: Cierre de Caja ── */}
       {cierreModal&&(()=>{
-        const todaySales=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===localDate();});
+        const todaySales=sales.filter(s=>getSaleDate(s)===localDate());
         const tt=todaySales.reduce((a,s)=>a+s.total,0);
         const bm={'Efectivo':0,'Getnet':0,'Transferencia':0,'Crédito':0};
         todaySales.forEach(s=>{const nm=normMethod(s.method||s.payment);if(bm[nm]!==undefined)bm[nm]+=s.total;});
