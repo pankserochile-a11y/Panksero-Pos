@@ -215,7 +215,7 @@ function App() {
     const snap = cart.map(x=>({...x}));
     const sale = {
       id: Date.now().toString()+Math.floor(Math.random()*1000).toString(),
-      date: today, datetime: new Date().toISOString(), time: localTime(),
+      date: localDate(), datetime: new Date().toISOString(), time: localTime(),
       items: snap.map(x=>({id:x.id,name:x.name,category:x.category,price:x.price,qty:x.qty})),
       total: cartTotal, method: payMethod||'Efectivo', client: clientName||''
     };
@@ -224,7 +224,7 @@ function App() {
     if(r.error){ showToast('⚠️ Error guardando venta','#c0392b'); setProcessing(false); return; }
 
     if(payMethod==='Crédito'){
-      const credEntry = {id:sale.id,date:today,time:localTime(),client:clientName,total:cartTotal,paid:false,items:sale.items,nota:''};
+      const credEntry = {id:sale.id,date:localDate(),time:localTime(),client:clientName,total:cartTotal,paid:false,items:sale.items,nota:''};
       await api(null,{action:'saveCredit',credit:credEntry});
       setCredits(c=>[credEntry,...c]);
     }
@@ -237,7 +237,7 @@ function App() {
         const ns = Math.max(0, updatedProds[idx].stock - it.qty);
         const r2 = await api(null,{action:'updateStock',id:it.id,stock:ns});
         if(!r2.error){
-          storage.addMovimiento({fecha:today,hora:localTime(),tipo:'venta',producto:updatedProds[idx].name,cantidad:-it.qty,stockAntes:updatedProds[idx].stock,stockDespues:ns,ref:sale.id});
+          storage.addMovimiento({fecha:localDate(),hora:localTime(),tipo:'venta',producto:updatedProds[idx].name,cantidad:-it.qty,stockAntes:updatedProds[idx].stock,stockDespues:ns,ref:sale.id});
           updatedProds[idx] = {...updatedProds[idx],stock:ns};
         }
       }
@@ -253,7 +253,7 @@ function App() {
   const pagarCredito = async (id) => {
     const r = await api(null,{action:'payCredit',id});
     if(r.error){ showToast('⚠️ Error al cobrar','#c0392b'); return; }
-    const td = today;
+    const td = localDate();
     setCredits(c=>c.map(x=>x.id===id?{...x,paid:true,paid_date:td}:x));
     showToast('✅ Crédito cobrado');
   };
@@ -314,7 +314,7 @@ function App() {
       const raw=s.datetime||s.date||'';
       let d=raw.substring(0,10);
       if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}
-      return d===today;
+      return d===localDate();
     });
     const total = todaySales.reduce((a,s)=>a+s.total,0);
     const byMethod = {'Efectivo':0,'Getnet':0,'Transferencia':0,'Crédito':0};
@@ -327,7 +327,7 @@ function App() {
     const pendCred = credits.filter(c=>!c.paid);
     const cierre = {
       id: Date.now().toString(),
-      fecha: today,
+      fecha: localDate(),
       hora: localTime(),
       ventas: todaySales.length,
       total,
@@ -413,7 +413,7 @@ function App() {
             </button>
           ))}
         </div>
-        <div style={{color:'#8B5E3C',fontSize:'.75rem',textAlign:'right'}}><div id="clk">--:--</div><div>{today}</div></div>
+        <div style={{color:'#8B5E3C',fontSize:'.75rem',textAlign:'right'}}><div id="clk">--:--</div><div id="hdr-date">{today}</div></div>
       </div>
 
       {toast&&<div style={{position:'fixed',bottom:24,left:'50%',transform:'translateX(-50%)',background:toast.color,color:'#fff',padding:'10px 22px',borderRadius:10,fontWeight:600,zIndex:9999,boxShadow:'0 4px 20px rgba(0,0,0,.2)',whiteSpace:'nowrap'}}>{toast.msg}</div>}
@@ -432,7 +432,7 @@ function App() {
             </div>
 
             {/* Resumen del día */}
-            {(()=>{const ts=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===today;});const tt=ts.reduce((a,s)=>a+s.total,0);return(
+            {(()=>{const ts=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===localDate();});const tt=ts.reduce((a,s)=>a+s.total,0);return(
               <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,padding:'7px 12px',background:'#fff9f2',borderBottom:'1px solid #e8d5b7'}}>
                 {[['Ventas hoy',fmt(tt)],['Transacciones',ts.length],['Ticket prom.',ts.length?fmt(Math.round(tt/ts.length)):'-']].map(([l,v])=>(
                   <div key={l} style={{background:'#f5ede0',borderRadius:7,padding:'5px 10px'}}>
@@ -574,9 +574,9 @@ function App() {
                         <div style={{fontWeight:700,fontSize:'.85rem'}}>{fmt(p.price)}</div>
                       </div>
                       <div style={{display:'flex',alignItems:'center',gap:3}}>
-                        <button onClick={async()=>{const ns=Math.max(0,p.stock-1);const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:-1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#fde8e8','#c0392b'),width:22,height:22,padding:0}}>−</button>
+                        <button onClick={async()=>{const ns=Math.max(0,p.stock-1);const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:localDate(),hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:-1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#fde8e8','#c0392b'),width:22,height:22,padding:0}}>−</button>
                         <span style={{fontFamily:"'Fraunces',serif",fontSize:'1.1rem',fontWeight:700,minWidth:28,textAlign:'center',color:p.stock===0?'#c0392b':p.stock<=3?'#c9963a':'#2d6a4f'}}>{p.stock}</span>
-                        <button onClick={async()=>{const ns=p.stock+1;const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:today,hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:+1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#d1fae5','#065f46'),width:22,height:22,padding:0}}>+</button>
+                        <button onClick={async()=>{const ns=p.stock+1;const r=await api(null,{action:'updateStock',id:p.id,stock:ns});if(!r.error){storage.addMovimiento({fecha:localDate(),hora:localTime(),tipo:'ajuste',producto:p.name,cantidad:+1,stockAntes:p.stock,stockDespues:ns,ref:'manual'});setProducts(ps=>ps.map(x=>x.id===p.id?{...x,stock:ns}:x));}}} style={{...S.btn('#d1fae5','#065f46'),width:22,height:22,padding:0}}>+</button>
                       </div>
                       <button onClick={()=>setStockModal({product:p,qty:1})} style={{...S.btn('#8B5E3C'),padding:'5px 10px',fontSize:'.75rem'}}>📦 Cargar</button>
                       <button onClick={()=>{const f=products.find(x=>x.id===p.id);if(f)setEditP({...f});}} style={{background:'#e8f4fd',color:'#185FA5',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:'.85rem'}}>✏️</button>
@@ -812,7 +812,7 @@ function App() {
                 const ns=stockModal.product.stock+stockModal.qty;
                 const r=await api(null,{action:'updateStock',id:stockModal.product.id,stock:ns});
                 if(r.error){showToast('⚠️ Error al actualizar','#c0392b');return;}
-                storage.addMovimiento({fecha:today,hora:localTime(),tipo:'carga',producto:stockModal.product.name,cantidad:+stockModal.qty,stockAntes:stockModal.product.stock,stockDespues:ns,ref:'carga manual'});
+                storage.addMovimiento({fecha:localDate(),hora:localTime(),tipo:'carga',producto:stockModal.product.name,cantidad:+stockModal.qty,stockAntes:stockModal.product.stock,stockDespues:ns,ref:'carga manual'});
                 setProducts(ps=>ps.map(p=>p.id===stockModal.product.id?{...p,stock:ns}:p));
                 showToast('✅ +'+stockModal.qty+' unidades a '+stockModal.product.name);
                 setStockModal(null);
@@ -844,7 +844,7 @@ function App() {
               <button onClick={async()=>{
                 if(!creditModal.client.trim()){showToast('⚠️ Ingresa el nombre','#c9963a');return;}
                 if(!creditModal.monto||creditModal.monto<=0){showToast('⚠️ Ingresa un monto','#c9963a');return;}
-                const cr={id:Date.now().toString(),date:today,time:localTime(),client:creditModal.client.trim(),total:creditModal.monto,nota:creditModal.nota||'',items:[],paid:false};
+                const cr={id:Date.now().toString(),date:localDate(),time:localTime(),client:creditModal.client.trim(),total:creditModal.monto,nota:creditModal.nota||'',items:[],paid:false};
                 const r=await api(null,{action:'saveCredit',credit:cr});
                 if(r.error){showToast('⚠️ Error al guardar','#c0392b');return;}
                 setCredits(cs=>[cr,...cs]);
@@ -859,7 +859,7 @@ function App() {
 
       {/* ── Modal: Cierre de Caja ── */}
       {cierreModal&&(()=>{
-        const todaySales=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===today;});
+        const todaySales=sales.filter(s=>{const raw=s.datetime||s.date||'';let d=raw.substring(0,10);if(raw.includes('T')&&raw.includes('Z')){const dt=new Date(raw);d=dt.toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});}return d===localDate();});
         const tt=todaySales.reduce((a,s)=>a+s.total,0);
         const bm={'Efectivo':0,'Getnet':0,'Transferencia':0,'Crédito':0};
         todaySales.forEach(s=>{const nm=normMethod(s.method||s.payment);if(bm[nm]!==undefined)bm[nm]+=s.total;});
@@ -868,7 +868,7 @@ function App() {
           <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:16}} onClick={e=>{if(e.target===e.currentTarget)setCierreModal(false);}}>
             <div style={{...S.card,padding:24,maxWidth:400,width:'100%',maxHeight:'90vh',overflowY:'auto'}}>
               <div style={{fontFamily:"'Fraunces',serif",fontWeight:700,fontSize:'1.15rem',color:'#3d2010',marginBottom:4}}>🔒 Cierre de Caja</div>
-              <div style={{fontSize:'.78rem',color:'#8B5E3C',marginBottom:16}}>{today} · {localTime()}</div>
+              <div style={{fontSize:'.78rem',color:'#8B5E3C',marginBottom:16}}>{localDate()} · {localTime()}</div>
 
               <div style={{background:'#f0fdf4',borderRadius:10,padding:'12px 16px',marginBottom:12}}>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
@@ -915,7 +915,12 @@ function App() {
   );
 }
 
-setInterval(()=>{const el=document.getElementById('clk');if(el)el.textContent=new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});},1000);
+setInterval(()=>{
+  const el=document.getElementById('clk');
+  if(el) el.textContent=new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+  const dEl=document.getElementById('hdr-date');
+  if(dEl) dEl.textContent=new Date().toLocaleDateString('es-CL',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
+},1000);
 ReactDOM.render(<App/>, document.getElementById('root'));
 </script>
 </body>
