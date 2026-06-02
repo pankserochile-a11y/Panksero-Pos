@@ -44,7 +44,7 @@ async function api(action, body=null) {
 }
 
 const fmt = n => '$' + Math.round(n||0).toLocaleString('es-CL');
-const localDate = () => new Date().toLocaleDateString('es-CL',{timeZone:'America/Santiago',year:'numeric',month:'2-digit',day:'2-digit'}).split('/').reverse().join('-');
+const localDate = () => new Date().toLocaleDateString('sv-SE',{timeZone:'America/Santiago'});
 const localTime = () => new Date().toLocaleTimeString('es-CL',{timeZone:'America/Santiago',hour:'2-digit',minute:'2-digit'});
 const today = localDate();
 
