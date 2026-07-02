@@ -79,6 +79,8 @@ const storage = {
   saveSales: (data) => localStorage.setItem('panksero_sales', JSON.stringify(data)),
   getCredits: () => { try { return JSON.parse(localStorage.getItem('panksero_credits')||'[]'); } catch { return []; } },
   saveCredits: (data) => localStorage.setItem('panksero_credits', JSON.stringify(data)),
+  getGastosFijos: () => { try { return JSON.parse(localStorage.getItem('panksero_gastos_fijos')||'[]'); } catch { return []; } },
+  saveGastosFijos: (data) => localStorage.setItem('panksero_gastos_fijos', JSON.stringify(data)),
 };
 
 // ── Generador de cierre HTML descargable ──
@@ -146,6 +148,9 @@ function App() {
   const [sales, setSales] = useState([]);
   const [credits, setCredits] = useState([]);
   const [cierres, setCierres] = useState(()=>storage.getCierres());
+  const [gastosFijos, setGastosFijos] = useState(()=>storage.getGastosFijos());
+  const [gfForm, setGfForm] = useState({nombre:'',categoria:'Arriendo',monto:'',dia_pago:''});
+  const [gfEdit, setGfEdit] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dbStatus, setDbStatus] = useState('connecting');
   const [tab, setTab] = useState('pos');
@@ -400,6 +405,12 @@ function App() {
     return mc&&ms;
   });
   const stockCriticos = products.filter(p=>p.stock<=3);
+  const GF_MARGEN = 0.6929;
+  const GF_DIAS = 26;
+  const gfActivos = gastosFijos.filter(g=>g.activo!==false);
+  const gfTotalMensual = gfActivos.reduce((a,g)=>a+Number(g.monto),0);
+  const gfPeMensual = gfTotalMensual > 0 ? Math.round(gfTotalMensual / GF_MARGEN) : 0;
+  const gfPeDiario = gfTotalMensual > 0 ? Math.round(gfPeMensual / GF_DIAS) : 257745;
   const CAT_ICONS={'Panadería':'🍞','Bollería':'🥐','Pastelería':'🎂','Café':'☕','Café de Máquina':'☕','Nevera':'🧊','Bebidas':'🥤','Charcutería':'🥩','Abarrotes':'🛒','Congelado':'❄️'};
 
   if(loading||dbStatus==='connecting') return (
@@ -445,7 +456,7 @@ function App() {
           </div>
         </div>
         <div style={{display:'flex',gap:4,flexWrap:'wrap',justifyContent:'center'}}>
-          {[['pos','🧾 Caja'],['stock','📦 Stock'],['report','📊 Reporte'],['creditos','📒 Créditos'],['config','⚙️']].map(([t,l])=>(
+          {[['pos','🧾 Caja'],['stock','📦 Stock'],['report','📊 Reporte'],['creditos','📒 Créditos'],['gastosfijos','💵 G.Fijos'],['config','⚙️']].map(([t,l])=>(
             <button key={t} onClick={()=>setTab(t)} style={{...S.btn(tab===t?'#c9963a':'transparent',tab===t?'#3d2010':'#c9963a'),padding:'6px 11px',fontSize:'.75rem',position:'relative'}}>
               {l}{t==='creditos'&&pendCredits.length>0&&<span style={{background:'#c0392b',color:'#fff',borderRadius:'50%',fontSize:'.6rem',padding:'0 4px',marginLeft:3}}>{pendCredits.length}</span>}
             </button>
@@ -470,14 +481,19 @@ function App() {
             </div>
 
             {/* Resumen del día */}
-            {(()=>{const ts=sales.filter(s=>getSaleDate(s)===localDate());const tt=ts.reduce((a,s)=>a+s.total,0);return(
-              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,padding:'7px 12px',background:'#fff9f2',borderBottom:'1px solid #e8d5b7'}}>
+            {(()=>{const ts=sales.filter(s=>getSaleDate(s)===localDate());const tt=ts.reduce((a,s)=>a+s.total,0);const pePorc=gfPeDiario>0?Math.round(tt/gfPeDiario*100):0;const peColor=pePorc>=100?'#2d6a4f':pePorc>=70?'#c9963a':'#c0392b';return(
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,padding:'7px 12px',background:'#fff9f2',borderBottom:'1px solid #e8d5b7'}}>
                 {[['Ventas hoy',fmt(tt)],['Transacciones',ts.length],['Ticket prom.',ts.length?fmt(Math.round(tt/ts.length)):'-']].map(([l,v])=>(
                   <div key={l} style={{background:'#f5ede0',borderRadius:7,padding:'5px 10px'}}>
                     <div style={{fontSize:'.6rem',color:'#8B5E3C',fontWeight:600,textTransform:'uppercase'}}>{l}</div>
                     <div style={{fontFamily:"'Fraunces',serif",fontSize:'1rem',fontWeight:700,color:'#3d2010'}}>{v}</div>
                   </div>
                 ))}
+                <div style={{background:'#f5ede0',borderRadius:7,padding:'5px 10px',position:'relative',overflow:'hidden'}}>
+                  <div style={{position:'absolute',bottom:0,left:0,height:3,width:Math.min(pePorc,100)+'%',background:peColor,borderRadius:'0 0 0 7px',transition:'width .4s'}}/>
+                  <div style={{fontSize:'.6rem',color:'#8B5E3C',fontWeight:600,textTransform:'uppercase'}}>Equilibrio</div>
+                  <div style={{fontFamily:"'Fraunces',serif",fontSize:'1rem',fontWeight:700,color:peColor}}>{pePorc}%</div>
+                </div>
               </div>
             );})()}
 
@@ -806,6 +822,114 @@ function App() {
             <div style={{fontWeight:700,color:'#3d2010',marginBottom:4}}>🚀 Migrar datos</div>
             <div style={{fontSize:'.8rem',color:'#8B5E3C',marginBottom:10}}>Carga 343 productos, 355 ventas y 15 créditos a Google Sheets. Solo una vez.</div>
             <button onClick={runMigration} style={{...S.btn('#c9963a'),padding:'10px 18px',fontSize:'.9rem'}}>🚀 Migrar ahora</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Gastos Fijos ── */}
+      {tab==='gastosfijos'&&(
+        <div style={{padding:16,maxWidth:700,margin:'0 auto'}}>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:'1.3rem',color:'#3d2010',fontWeight:700,marginBottom:14}}>💵 Gastos Fijos</div>
+
+          {/* Tarjetas resumen */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
+            {[
+              ['Total Fijo Mensual', fmt(gfTotalMensual), '#3d2010'],
+              ['P.E. Mensual', fmt(gfPeMensual), '#8B5E3C'],
+              ['P.E. Diario', fmt(gfPeDiario), '#c9963a'],
+            ].map(([l,v,c])=>(
+              <div key={l} style={{...S.card,padding:'12px 14px',borderLeft:'4px solid '+c}}>
+                <div style={{fontSize:'.62rem',color:'#8B5E3C',fontWeight:700,textTransform:'uppercase',marginBottom:4}}>{l}</div>
+                <div style={{fontFamily:"'Fraunces',serif",fontSize:'1.15rem',fontWeight:700,color:c}}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Formulario agregar */}
+          <div style={{...S.card,padding:14,marginBottom:14}}>
+            <div style={{fontWeight:700,color:'#3d2010',marginBottom:10,fontSize:'.9rem'}}>{gfEdit?'✏️ Editar gasto fijo':'➕ Agregar gasto fijo'}</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              <div style={{gridColumn:'1/-1'}}>
+                <div style={{fontSize:'.72rem',color:'#8B5E3C',fontWeight:600,marginBottom:3}}>Nombre *</div>
+                <input value={gfEdit?gfEdit.nombre:gfForm.nombre} onChange={e=>gfEdit?setGfEdit(x=>({...x,nombre:e.target.value})):setGfForm(x=>({...x,nombre:e.target.value}))}
+                  placeholder="ej: Arriendo local" style={{width:'100%',padding:'9px 12px',border:'2px solid #c9963a',borderRadius:8,fontSize:'.9rem',background:'#fff9f2'}}/>
+              </div>
+              <div>
+                <div style={{fontSize:'.72rem',color:'#8B5E3C',fontWeight:600,marginBottom:3}}>Categoría</div>
+                <select value={gfEdit?gfEdit.categoria:gfForm.categoria} onChange={e=>gfEdit?setGfEdit(x=>({...x,categoria:e.target.value})):setGfForm(x=>({...x,categoria:e.target.value}))}
+                  style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8d5b7',borderRadius:8,fontSize:'.9rem',background:'#fff9f2'}}>
+                  {['Arriendo','Personal','Servicios','Financiero','Otros'].map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{fontSize:'.72rem',color:'#8B5E3C',fontWeight:600,marginBottom:3}}>Monto mensual ($) *</div>
+                <input type="number" value={gfEdit?gfEdit.monto:gfForm.monto} onChange={e=>gfEdit?setGfEdit(x=>({...x,monto:e.target.value})):setGfForm(x=>({...x,monto:e.target.value}))}
+                  placeholder="0" style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8d5b7',borderRadius:8,fontSize:'.9rem',background:'#fff9f2',textAlign:'right'}}/>
+              </div>
+              <div>
+                <div style={{fontSize:'.72rem',color:'#8B5E3C',fontWeight:600,marginBottom:3}}>Día de pago (opcional)</div>
+                <input type="number" min="1" max="31" value={gfEdit?gfEdit.dia_pago??'':gfForm.dia_pago} onChange={e=>gfEdit?setGfEdit(x=>({...x,dia_pago:e.target.value})):setGfForm(x=>({...x,dia_pago:e.target.value}))}
+                  placeholder="1-31" style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8d5b7',borderRadius:8,fontSize:'.9rem',background:'#fff9f2',textAlign:'right'}}/>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>{
+                const src = gfEdit || gfForm;
+                if(!src.nombre.trim()||!src.monto){showToast('⚠️ Nombre y monto son obligatorios','#c9963a');return;}
+                if(gfEdit){
+                  const updated=gastosFijos.map(g=>g.id===gfEdit.id?{...gfEdit,monto:Number(gfEdit.monto),dia_pago:gfEdit.dia_pago?Number(gfEdit.dia_pago):null}:g);
+                  setGastosFijos(updated);storage.saveGastosFijos(updated);setGfEdit(null);showToast('✅ Gasto actualizado');
+                } else {
+                  const nuevo={id:Date.now().toString(),nombre:gfForm.nombre.trim(),categoria:gfForm.categoria,monto:Number(gfForm.monto),dia_pago:gfForm.dia_pago?Number(gfForm.dia_pago):null,activo:true};
+                  const updated=[...gastosFijos,nuevo];setGastosFijos(updated);storage.saveGastosFijos(updated);setGfForm({nombre:'',categoria:'Arriendo',monto:'',dia_pago:''});showToast('✅ Gasto agregado');
+                }
+              }} style={{...S.btn('#2d6a4f'),flex:2,padding:'10px'}}>{gfEdit?'💾 Guardar cambios':'➕ Agregar gasto fijo'}</button>
+              {gfEdit&&<button onClick={()=>setGfEdit(null)} style={{...S.btn('#f5ede0','#8B5E3C'),flex:1}}>Cancelar</button>}
+            </div>
+          </div>
+
+          {/* Tabla de gastos fijos */}
+          <div style={{...S.card,padding:'4px 0'}}>
+            {gastosFijos.length===0?(
+              <div style={{textAlign:'center',padding:36,color:'#c9b99a',fontSize:'.85rem'}}>Sin gastos fijos. Agrega tu primero arriba.</div>
+            ):(
+              <>
+                {['Arriendo','Personal','Servicios','Financiero','Otros'].map(cat=>{
+                  const items=gastosFijos.filter(g=>g.categoria===cat);
+                  if(!items.length) return null;
+                  const catTotal=items.filter(g=>g.activo!==false).reduce((a,g)=>a+Number(g.monto),0);
+                  return(
+                    <div key={cat}>
+                      <div style={{padding:'6px 14px',background:'#f5ede0',fontSize:'.72rem',fontWeight:700,color:'#8B5E3C',textTransform:'uppercase',display:'flex',justifyContent:'space-between'}}>
+                        <span>{cat}</span><span>{fmt(catTotal)}/mes</span>
+                      </div>
+                      {items.map(g=>(
+                        <div key={g.id} style={{display:'flex',alignItems:'center',padding:'10px 14px',borderBottom:'1px solid #f5ede0',gap:8,background:g.activo===false?'#f9f9f9':'#fff9f2',opacity:g.activo===false?0.5:1}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontWeight:600,fontSize:'.85rem',color:'#3d2010'}}>{g.nombre}{g.dia_pago?<span style={{fontSize:'.68rem',color:'#a8a29e',marginLeft:6}}>día {g.dia_pago}</span>:null}</div>
+                          </div>
+                          <div style={{fontFamily:"'Fraunces',serif",fontWeight:700,fontSize:'.9rem',color:'#3d2010',minWidth:80,textAlign:'right'}}>{fmt(Number(g.monto))}</div>
+                          <button onClick={()=>setGfEdit({...g,monto:String(g.monto),dia_pago:g.dia_pago??''})} style={{background:'#e8f4fd',color:'#185FA5',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:'.8rem'}}>✏️</button>
+                          <button onClick={()=>{
+                            const updated=gastosFijos.map(x=>x.id===g.id?{...x,activo:x.activo===false}:x);
+                            setGastosFijos(updated);storage.saveGastosFijos(updated);
+                            showToast(g.activo===false?'✅ Gasto activado':'⏸ Gasto desactivado','#c9963a');
+                          }} style={{background:g.activo===false?'#d1fae5':'#fef3c7',color:g.activo===false?'#065f46':'#92400e',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:'.8rem'}}>{g.activo===false?'▶':'⏸'}</button>
+                          <button onClick={()=>{
+                            if(!window.confirm('¿Eliminar "'+g.nombre+'"?'))return;
+                            const updated=gastosFijos.filter(x=>x.id!==g.id);
+                            setGastosFijos(updated);storage.saveGastosFijos(updated);showToast('🗑️ Gasto eliminado','#c0392b');
+                          }} style={{background:'#fde8e8',color:'#c0392b',border:'none',borderRadius:6,width:28,height:28,cursor:'pointer',fontSize:'.8rem'}}>🗑️</button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+                <div style={{padding:'10px 14px',background:'#f5ede0',display:'flex',justifyContent:'space-between',fontWeight:700,fontSize:'.85rem',color:'#3d2010'}}>
+                  <span>TOTAL MENSUAL</span><span style={{fontFamily:"'Fraunces',serif",fontSize:'1rem'}}>{fmt(gfTotalMensual)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
